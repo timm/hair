@@ -32,8 +32,9 @@ def distx(tbl, r: list, q) -> float:
                    for a, v in q.items() if v != "?")
 
 def disty(tbl, row: list) -> float:
+  "Distance to heaven over the +/- goals (not the ! class)"
   return minkowski(abs(norm(tbl.cols[a], row[a]) - tbl.goal[a])
-                   for a in tbl.y if row[a] != "?")
+                   for a in tbl.goal if row[a] != "?")
 
 def near(tbl, rows: list, row: list, k=1) -> list:
   "The k rows nearest to row (x columns only)"

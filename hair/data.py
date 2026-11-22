@@ -75,7 +75,7 @@ def TAB(src) -> o:
   for at,s in enumerate(tbl.names):
     tbl.cols[at] = Num() if s[0].isupper() else Sym()
     if   s[-1] == "X": continue
-    elif s[-1] == "!": tbl.klass = at
+    elif s[-1] == "!": tbl.klass = at; tbl.y += [at]
     elif s[-1] in "+-": tbl.y += [at]; tbl.goal[at] = s[-1]=="+"
     else:               tbl.x += [at]
   for row in src: addRow(tbl, row)

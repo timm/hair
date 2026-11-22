@@ -157,7 +157,8 @@ $(page): $(it) $(Tmp)/hi.py
 
 #<index.top>
 # <meta charset=utf-8><title>timm / {Name}</title>
-# <body style="margin:0;padding:2em 0;">
+# <meta name=viewport content="width=device-width,initial-scale=1">
+# <body style="margin:0;padding:2em 16px;">
 # <center><h1 style="font-weight:normal;font-family:'Times New Roman',Times,serif">hair : hands-on AI recipes</h1></center>
 # <p>
 # <center><table cellspacing=0 cellpadding=0 border=0>
@@ -423,8 +424,13 @@ $(page): $(it) $(Tmp)/hi.py
 # out  = PAT.sub(paint, html.escape(src, quote=False))
 #
 # print('<meta charset=utf-8>'
+#       '<meta name=viewport content="width=device-width,initial-scale=1">'
 #       '<link rel=stylesheet href="https://fonts.googleapis.com/css2'
 #       '?family=JetBrains+Mono:wght@400&display=swap">'
+#       '<style>html{-webkit-text-size-adjust:100%;text-size-adjust:100%}'
+#       '@media screen and (max-width:700px){body{margin:4px}'  # phones:
+#       'pre{columns:1!important;font-size:calc(100vw/50)!important;'
+#       'white-space:pre-wrap;overflow-wrap:anywhere}}</style>' # 80ch fits
 #       '<body style="background:#ffffff">')
 # print('<pre style="font:6.5pt/1.4 JetBrains Mono,Monaco,Menlo,monospace;'
 #       'color:#1f2328;columns:%s 80ch;column-gap:2em;'

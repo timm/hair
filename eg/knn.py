@@ -58,6 +58,6 @@ def main() -> None:
                        for n in SIZES + [None]]
               )]:
     print(f"\n# {x.title}\n")
-    learn(x.files, partial(knn, ts=x.ts), rae, n=2)
+    report(learn(x.files, partial(knn, ts=x.ts), rae, n=2))
 
 if __name__ == "__main__": main()

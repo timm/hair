@@ -8,7 +8,7 @@ three must agree before two result sets are called equal.
 where the split explains the most variance, stop when `same`.
 `confuse` scores a classifier from a list of (got, want) pairs.
 """
-import random, multiprocessing as mp
+import random, time, multiprocessing as mp
 from bisect import bisect_left, bisect_right
 from .lib import o, isa, TINY
 from .about import the
@@ -42,9 +42,9 @@ def cohen(xs: list, ys: list) -> float:
   sd = (((n-1)*var(xs) + (m-1)*var(ys))/(n+m-2+TINY))**.5
   return abs(mu(xs) - mu(ys)) / (sd + TINY)
 
-def same(xs: list, ys: list, cliff=0.195, k=1.36) -> bool:
+def same(xs: list, ys: list, cliff=0.195, k=1.36, eps=None) -> bool:
   "Indistinguishable: small Cohen effect (--eps) AND Cliff's delta AND KS."
-  return (cohen( xs, ys) <= the.eps
+  return (cohen( xs, ys) <= (eps or the.eps)
       and cliffs(xs, ys) <= cliff
       and ks(    xs, ys) <= k)
 
@@ -60,31 +60,37 @@ def rank(d: dict, reverse=False) -> dict:
   return out
 
 def report(src, reverse=False, decs=0) -> dict:
-  """Matrix of ranked results, one row per data set, streamed.
+  """Print a matrix of ranked results, one row per data set, streamed.
 
-  src: iterable of (about, {treatment: [scores]}); about is a dict
-  of columns shown last (e.g. {"#x": 4, "dataset": "auto93"}).
-  Every data set has the same treatments (names, no spaces). Per
-  data set: rank the treatments (reverse=True if bigger is better),
-  print one row -- each cell is the median score (to `decs`
-  decimals), right-justified under its column name; "!" follows a
-  rank-1 (winning) cell, else ",". A final row gives each
-  treatment's WIN% -- the percent of data sets it topped. Rows
-  print as they complete, so a crash leaves a partial table.
-  Returns win counts."""
-  win, n, W = {}, 0, lambda s: max(len(s), 5)    # W = column width
-  for n, (ds, d) in enumerate(src, 1):
-    if n == 1: print(", ".join("%*s" % (W(c), c) for c in [*d, *ds]))
+  src: iterable of (about, {treatment: [scores]}, {treatment: secs})
+  (see learn); about is a dict of columns shown last (e.g. {"#x": 4,
+  "dataset": "auto93"}). Every data set has the same treatments
+  (names, no spaces). Per data set: rank the treatments (reverse=True
+  if bigger is better), print one row -- each cell is the mean
+  score (to `decs` decimals), right-justified under its column name;
+  "!" follows a rank-1 (winning) cell, else ",". Rows print as they
+  complete, so a crash leaves a partial table. Then three rows:
+  #wins (data sets ranked 1), #mean (of the means), #secs (all
+  data). Returns win counts."""
+  win, mus, secs, W = {}, {}, {}, lambda s: max(len(s), 5)
+  mu = lambda xs: sum(xs) / (len(xs) or 1)
+  for n, (ds, d, ss) in enumerate(src, 1):
+    if n == 1:                                 # header fixes column order
+      ts = list(d); print(", ".join("%*s" % (W(c), c) for c in [*ts, *ds]))
     rk = rank(d, reverse)
-    for t in d: win[t] = win.get(t, 0) + (rk[t] == 1)
-    mid = lambda t: sorted(d[t])[len(d[t])//2]
-    print("".join("%*.*f%s" % (W(t), decs, mid(t),
-                               "! " if rk[t] == 1 else ", ") for t in d)
+    for t in ts:
+      win[t]  = win.get(t, 0) + (rk[t] == 1)
+      secs[t] = secs.get(t, 0) + ss.get(t, 0)
+      mus.setdefault(t, []).append(mu(d[t]))
+    print("".join("%*.*f%s" % (W(t), decs, mu(d[t]),
+                               "! " if rk[t] == 1 else ", ") for t in ts)
           + ", ".join(("%-*s" if isa(v, str) else "%*s") % (W(k), v)
                       for k, v in ds.items()),   # text left, nums right
           flush=True)
-  print("".join("%*d, " % (W(t), round(100*w/max(n, 1)))
-                for t, w in win.items()) + "WIN%")
+  for txt, f, dd in [("#wins", win.get, 0),
+                     ("#mean", lambda t: mu(mus[t]), decs),
+                     ("#secs", secs.get, 1)]:
+    print("".join("%*.*f, " % (W(t), dd, f(t)) for t in ts) + txt)
   return win
 
 def split(rows: list, n1: int, n2: int) -> tuple:
@@ -114,28 +120,33 @@ def rae(pairs: list) -> float:
 
 def _run(f): return _job(f)    # Pool pickles by name; closures have none
 
-def learn(files, learner, eval, reverse=False, decs=0, m=5, n=5):
-  """One call for every learner. Per file: seed, load, m*n xval.
-  Per fold, `learner(tbl, train, test)` yields (treatment, want,
-  got) guesses; `eval(pairs)` scores each treatment's (want, got)
-  pairs (e.g. rae, aucs), so each treatment gets one number per
-  fold, i.e. a distribution to rank. Files run on --jobs cpus (0:
-  all; forked, so each worker sees `score`); each row prints as
-  soon as its file is done, so in finish order (see `report`)."""
+def learn(files, learner, eval, m=5, n=5):
+  """One call for every learner; prints nothing (see `report`).
+  Per file: seed, load, m*n xval. Per fold, `learner(tbl, train,
+  test)` yields (treatment, want, got) guesses; `eval(pairs)` scores
+  each treatment's (want, got) pairs (e.g. rae, aucs), so each
+  treatment gets one number per fold, i.e. a distribution to rank.
+  A treatment's secs = time spent before its guesses are yielded.
+  Files run on --jobs cpus (0: all; forked, so each worker sees
+  `score`). Yields (about, {treatment: [scores]}, {treatment: secs})
+  per file, in finish order."""
   global _job
   def score(f):
     random.seed(the.seed)                        # reproducible per file
-    tbl, pairs, out = TAB(csv(f)), {}, {}
+    tbl, pairs, out, secs = TAB(csv(f)), {}, {}, {}
     for i, (train, test) in enumerate(xval(tbl.rows, m, n)):
+      t0 = time.perf_counter()
       for t, want, got in learner(tbl, train, test):
+        t1 = time.perf_counter(); secs[t] = secs.get(t, 0) + t1 - t0
         pairs.setdefault((t, i), []).append((want, got))
+        t0 = time.perf_counter()
     for (t, _), ps in pairs.items():                # 1 score per fold
       out.setdefault(t, []).append(eval(ps))
     return {"#x": len(tbl.x), "#y": len(tbl.y), "#rows": len(tbl.rows),
-            "dataset": name(f)}, out
+            "dataset": name(f)}, out, secs
   _job = score
   with mp.get_context("fork").Pool(the.jobs or None) as p:
-    return report(p.imap_unordered(_run, files), reverse, decs)
+    yield from p.imap_unordered(_run, files)
 
 def confuse(pairs: list) -> o:
   "Score (want, got) pairs; per-class counts and overall accuracy"
